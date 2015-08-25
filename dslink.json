@@ -1,0 +1,43 @@
+{
+  "name": "dslink-java-zwave",
+  "version": "0.1.1",
+  "description": "A dslink for zwave",
+  "license": "Apache",
+  "main": "bin/dslink-java-zwave",
+  "author": {
+    "name": "Peter Weise",
+    "email": "p.weise@dglogik.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IOT-DSA/dslink-java-zwave"
+  },
+  "bugs": {
+    "url": "https://github.com/IOT-DSA/dslink-java-zwave/issues"
+  },
+  "configs": {
+    "name": {
+      "type": "string",
+      "default": "zwave"
+    },
+    "broker": {
+      "type": "url"
+    },
+    "nodes": {
+      "type": "path",
+      "default": "nodes.json"
+    },
+    "key": {
+      "type": "path",
+      "default": ".key"
+    },
+    "log": {
+      "type": "enum",
+      "default": "info"
+    },
+    "handler_class": {
+      "type": "string",
+      "default": "org.dsa.iot.zwave.Main"
+    }
+  }
+}
