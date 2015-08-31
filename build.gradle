@@ -17,7 +17,7 @@ repositories {
 dependencies {
     compile 'org.iot-dsa:commons:0.9.0-SNAPSHOT'
     compile 'org.iot-dsa:dslink:0.8.0'
-    compile 'com.github.zgmnkv:zwave4j:0.3'
+    //compile 'com.github.zgmnkv:zwave4j:0.3'
     compile fileTree('external')
     compile 'org.scream3r:jssc:2.8.0'
 }

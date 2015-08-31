@@ -36,9 +36,7 @@ public class Main extends DSLinkHandler {
 	public void onResponderConnected(DSLink link) {
 		LOGGER.info("Connected");
 		NodeManager manager = link.getNodeManager();
-		Serializer ser = new Serializer(manager);
-		Deserializer deser = new Deserializer(manager);
 		Node superRoot = manager.getNode("/").getNode();
-		ZWaveLink.start(superRoot, ser, deser);
+		ZWaveLink.start(superRoot);
 	}
 }

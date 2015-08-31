@@ -51,44 +51,39 @@ public class ZWaveDevice {
         // ignore COMMAND_CLASS_BASIC (0x20) as it currently not used for USER access
         // ignored because the value is removed by ZWave before it is stored as a child
         if (validClass > (short) 0x20) {
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    tempString = event.getValueLabel(conn.notification.getValueId()).replace("(%)", "(Percent)");
-                }
-            }, false);*/
             String name = StringUtils.encodeName(conn.manager.getValueLabel(notification.getValueId()).replace("(%)", "(Percent)"));
-            Node child = node.createChild(name).build();
-            Value val = new Value(notification.getNodeId());
-            child.setAttribute("nodeId", val);
-            val = new Value(notification.getValueId().getCommandClassId());
-            child.setAttribute("cc", val);
-            val = new Value(notification.getGroupIdx());
-            child.setAttribute("group", val);
-            val = new Value(notification.getValueId().getInstance());
-            child.setAttribute("instance", val);
-            val = new Value((notification.getValueId().getGenre().name()));
-            child.setAttribute("genre", val);
-            val = new Value(notification.getValueId().getIndex());
-            child.setAttribute("index", val);
-            val = new Value(notification.getSceneId());
-            child.setAttribute("scene", val);
-            val = new Value(notification.getButtonId());
-            child.setAttribute("button", val);
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    tempString = event.getValueUnits(conn.notification.getValueId());
-                }
-            }, false);*/
-            val = new Value(conn.manager.getValueUnits(notification.getValueId()));
-            child.setAttribute("unit", val);
-            val = new Value(notification.getValueId().getType().name());
-            child.setAttribute("type", val);
-            setValue(notification.getValueId(), child);
+            if (name.equals("Unknown")) {
+                LOGGER.info("This is the problem - ZWaveDevice - addValue");
+                name = "Energy";
+            }
+            if (!name.isEmpty()) {
+                Node child = node.createChild(name).build();
+                Value val = new Value(notification.getNodeId());
+                child.setAttribute("nodeId", val);
+                val = new Value(notification.getValueId().getCommandClassId());
+                child.setAttribute("cc", val);
+                val = new Value(notification.getGroupIdx());
+                child.setAttribute("group", val);
+                val = new Value(notification.getValueId().getInstance());
+                child.setAttribute("instance", val);
+                val = new Value((notification.getValueId().getGenre().name()));
+                child.setAttribute("genre", val);
+                val = new Value(notification.getValueId().getIndex());
+                child.setAttribute("index", val);
+                val = new Value(notification.getSceneId());
+                child.setAttribute("scene", val);
+                val = new Value(notification.getButtonId());
+                child.setAttribute("button", val);
+                val = new Value(conn.manager.getValueUnits(notification.getValueId()));
+                child.setAttribute("unit", val);
+                val = new Value(notification.getValueId().getType().name());
+                child.setAttribute("type", val);
+                setValue(notification.getValueId(), child);
 
-            addActions(child);
+                addActions(child);
+            }
         }
+        LOGGER.info("Value added - " + notification.getNodeId());
     }
 
     protected void addAllOnOff() {
@@ -102,7 +97,7 @@ public class ZWaveDevice {
         node.createChild("Refresh").setAction(actRefresh).build().setSerializable(false);
     }
 
-    private Action controllerRefreshAction() {
+    protected Action controllerRefreshAction() {
         Action act = new Action(Permission.READ, new ControllerRefreshHandler());
         return act;
     }
@@ -110,7 +105,13 @@ public class ZWaveDevice {
     private class ControllerRefreshHandler implements Handler<ActionResult> {
         public void handle(ActionResult event) {
             conn.stop();
-            conn.start();
+            conn.restart();
+            try {
+                Thread.sleep(2000); //needed to prevent the application from crashing
+            } catch (Exception e) {
+                LOGGER.info("Sleep error: " + e);
+            }
+            // without the sleep above, this next line causes a crash
             conn.manager.requestNodeState(homeId, conn.controllerNode);
         }
     }
@@ -122,12 +123,6 @@ public class ZWaveDevice {
 
     private class SetOnHandler implements Handler<ActionResult> {
         public void handle(ActionResult event) {
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    event.switchAllOn(homeId);
-                }
-            }, false);*/
             conn.manager.switchAllOn(homeId);
         }
     }
@@ -139,12 +134,6 @@ public class ZWaveDevice {
 
     private class SetOffHandler implements Handler<ActionResult> {
         public void handle(ActionResult event) {
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    event.switchAllOff(homeId);
-                }
-            }, false);*/
             conn.manager.switchAllOff(homeId);
         }
     }
@@ -188,12 +177,6 @@ public class ZWaveDevice {
         }
         public void handle(ActionResult event) {
             final short val = kid.getAttribute("nodeId").getNumber().shortValue();
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    event.refreshNodeInfo(homeId, val);
-                }
-            }, false);*/
             conn.manager.refreshNodeInfo(homeId, val);
         }
     }
@@ -233,11 +216,11 @@ public class ZWaveDevice {
         ZWaveDevice zwd = new ZWaveDevice(parent, newNode, homeId, /*manager,*/ link, conn);
         Action act = setNameAction();
         newNode.createChild("rename").setAction(act).build().setSerializable(false);
-        moveAtrib(newNode);
+        moveAttrib(newNode);
         return zwd;
     }
 
-    private void moveAtrib(Node newNode) {
+    private void moveAttrib(Node newNode) {
         for (Node kid : node.getChildren().values()) {
             newNode.addChild(kid);
             addActions(newNode.getChild(kid.getName()));
@@ -255,32 +238,22 @@ public class ZWaveDevice {
         // ignore COMMAND_CLASS_BASIC (0x20) as it currently not used for USER access
         // ignored because the value is removed by ZWave before it is stored as a child
         if (validClass > (short) 0x20) {
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    tempString = event.getValueLabel(conn.notification.getValueId());
-                }
-            }, false);*/
             String name = StringUtils.encodeName(conn.manager.getValueLabel(notification.getValueId()).replace("(%)", "(Percent)"));
             Node child = node.getChild(name);
             setValue(notification.getValueId(), child);
         }
+        //LOGGER.info("Value changed - " + notification.getNodeId());
     }
 
     protected void removeValue(Notification notification) {
         short validClass = notification.getValueId().getCommandClassId();
         // ignore COMMAND_CLASS_BASIC (0x20) as it currently not used for USER access
         // ignored because the value is removed by ZWave before it is stored as a child
-        //if (validClass > (short) 0x20) {
-            /*conn.zwr.get(new Handler<Manager>() {
-                @Override
-                public void handle(Manager event) {
-                    tempString = event.getValueLabel(conn.notification.getValueId());
-                }
-            }, false);*/
+        if (validClass > (short) 0x20) {
             String name = StringUtils.encodeName(conn.manager.getValueLabel(notification.getValueId()).replace("(%)", "(Percent)"));
             node.removeChild(name);
-        //}
+        }
+        LOGGER.info("Value removed - " + notification.getNodeId());
     }
 
     private void setValue(final ValueId valueId, Node child) {
@@ -289,41 +262,28 @@ public class ZWaveDevice {
         switch (valueId.getType()) {
             case BOOL:
                 final AtomicReference<Boolean> b = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsBool(valueId, b);
-                    }
-                }, false);*/
                 conn.manager.getValueAsBool(valueId, b);
                 child.setValueType(ValueType.BOOL);
                 val = new Value(b.get());
                 child.setValue(val);
-
                 child.setWritable(Writable.WRITE);
                 child.getListener().setValueHandler(new SetPointHandler(child));
                 break;
             case BYTE:
                 final AtomicReference<Short> bb = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsByte(valueId, bb);
-                    }
-                }, false);*/
                 conn.manager.getValueAsByte(valueId, bb);
                 child.setValueType(ValueType.NUMBER);
                 val = new Value(bb.get());
                 child.setValue(val);
+
+                child.setWritable(Writable.WRITE);
+                child.getListener().setValueHandler(new SetPointHandler(child));
                 break;
             case DECIMAL:
+                if (child == null) {
+
+                }
                 final AtomicReference<Float> f = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsFloat(valueId, f);
-                    }
-                }, false);*/
                 conn.manager.getValueAsFloat(valueId, f);
                 child.setValueType(ValueType.NUMBER);
                 val = new Value(f.get());
@@ -334,12 +294,6 @@ public class ZWaveDevice {
                 break;
             case INT:
                 final AtomicReference<Integer> i = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsInt(valueId, i);
-                    }
-                }, false);*/
                 conn.manager.getValueAsInt(valueId, i);
                 child.setValueType(ValueType.NUMBER);
                 val = new Value(i.get());
@@ -349,21 +303,9 @@ public class ZWaveDevice {
                 child.getListener().setValueHandler(new SetPointHandler(child));
                 break;
             case LIST:
-                final AtomicReference<String> l = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueListSelectionString(valueId, l);
-                    }
-                }, false);*/
+                AtomicReference<String> l = new AtomicReference<>();
                 conn.manager.getValueListSelectionString(valueId, l);
-                final List<String> ll = new ArrayList<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueListItems(valueId, ll);
-                    }
-                }, false);*/
+                List<String> ll = new ArrayList<>();
                 conn.manager.getValueListItems(valueId, ll);
                 Set<String> ls = new HashSet<>(ll);
                 child.setValueType(ValueType.makeEnum(ls));
@@ -375,18 +317,26 @@ public class ZWaveDevice {
                 break;
             case SCHEDULE:
                 // ToDo
+                AtomicReference<Short> hrs = new AtomicReference<>();
+                AtomicReference<Short> min = new AtomicReference<>();
+                AtomicReference<Byte> sec = new AtomicReference<>();
+                short numPoints = conn.manager.getNumSwitchPoints(valueId);
+                Short[] hours = new Short[numPoints];
+                Short[] minutes = new Short[numPoints];
+                Byte[] setback = new Byte[numPoints];
+                for (short n = 0; n < numPoints; n++) {
+                    conn.manager.getSwitchPoint(valueId, n, hrs, min, sec);
+                    hours[n] = hrs.get();
+                    minutes[n] = min.get();
+                    setback[n] = sec.get();
+                }
+
                 child.setValueType(ValueType.STRING);
                 val = new Value("null");
                 child.setValue(val);
                 break;
             case SHORT:
-                final AtomicReference<Short> s = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsShort(valueId, s);
-                    }
-                }, false);*/
+                AtomicReference<Short> s = new AtomicReference<>();
                 conn.manager.getValueAsShort(valueId, s);
                 child.setValueType(ValueType.NUMBER);
                 val = new Value(s.get());
@@ -397,12 +347,6 @@ public class ZWaveDevice {
                 break;
             case STRING:
                 final AtomicReference<String> ss = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsString(valueId, ss);
-                    }
-                }, false);*/
                 conn.manager.getValueAsString(valueId, ss);
                 child.setValueType(ValueType.STRING);
                 val = new Value(ss.get());
@@ -413,15 +357,9 @@ public class ZWaveDevice {
                 break;
             case BUTTON:
                 // ToDo
-                final AtomicReference<String> bt = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsString(valueId, bt);
-                    }
-                }, false);*/
-                conn.manager.getValueAsString(valueId, bt);
-                child.setValueType(ValueType.STRING);
+                AtomicReference<Boolean> bt = new AtomicReference<>();
+                conn.manager.getValueAsBool(valueId, bt);
+                child.setValueType(ValueType.BOOL);
                 val = new Value(bt.get());
                 child.setValue(val);
 
@@ -430,12 +368,6 @@ public class ZWaveDevice {
                 break;
             case RAW:
                 final AtomicReference<short[]> sss = new AtomicReference<>();
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().getValueAsRaw(valueId, sss);
-                    }
-                }, false);*/
                 conn.manager.getValueAsRaw(valueId, sss);
                 valJson = new JsonArray();
                 short[] shorts = sss.get();
@@ -448,10 +380,12 @@ public class ZWaveDevice {
                 break;
             default:
                 // ToDo
+                LOGGER.info("setValue - unknown ValueId type");
                 child.setValueType(ValueType.STRING);
                 val = new Value("null");
                 child.setValue(val);
         }
+        //LOGGER.info("Value set - " + valueId.getNodeId());
     }
 
     private void sendValue(Node kid, ValuePair event) {
@@ -467,12 +401,6 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.BOOL);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsBool(valId, entryBool);
-                    }
-                }, false);*/
                 conn.manager.setValueAsBool(valId, entryBool);
                 break;
             case "BYTE":
@@ -484,12 +412,6 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.BYTE);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsByte(valId, entryByte);
-                    }
-                }, false);*/
                 conn.manager.setValueAsByte(valId, entryByte);
                 break;
             case "DECIMAL":
@@ -512,16 +434,10 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.INT);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsInt(valId, entryInt);
-                    }
-                }, false);*/
                 conn.manager.setValueAsInt(valId, entryInt);
                 break;
             case "LIST":
-                final String entryList = event.getCurrent().getString();
+                String entryList = event.getCurrent().getString();
                 valId = new ValueId(homeId,
                         kid.getAttribute("nodeId").getNumber().shortValue(),
                         returnGenre(kid),
@@ -529,19 +445,24 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.LIST);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueListSelection(valId, entryList);
-                    }
-                }, false);*/
                 conn.manager.setValueListSelection(valId, entryList);
                 break;
             case "SCHEDULE":
                 // ToDo
+                short hours = event.getCurrent().getNumber().shortValue();
+                short minutes = event.getCurrent().getNumber().shortValue();
+                byte setback = event.getCurrent().getNumber().byteValue();
+                valId = new ValueId(homeId,
+                        kid.getAttribute("nodeId").getNumber().shortValue(),
+                        returnGenre(kid),
+                        kid.getAttribute("cc").getNumber().shortValue(),
+                        kid.getAttribute("instance").getNumber().shortValue(),
+                        kid.getAttribute("index").getNumber().shortValue(),
+                        org.zwave4j.ValueType.SCHEDULE);
+                conn.manager.setSwitchPoint(valId, hours, minutes, setback);
                 break;
             case "SHORT":
-                final short entryShort = event.getCurrent().getNumber().shortValue();
+                short entryShort = event.getCurrent().getNumber().shortValue();
                 valId = new ValueId(homeId,
                         kid.getAttribute("nodeId").getNumber().shortValue(),
                         returnGenre(kid),
@@ -549,16 +470,10 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.SHORT);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsInt(valId, entryShort);
-                    }
-                }, false);*/
                 conn.manager.setValueAsInt(valId, entryShort);
                 break;
             case "STRING":
-                final String entryString = event.getCurrent().getString();
+                String entryString = event.getCurrent().getString();
                 valId = new ValueId(homeId,
                         kid.getAttribute("nodeId").getNumber().shortValue(),
                         returnGenre(kid),
@@ -566,42 +481,21 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.STRING);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsString(valId, entryString);
-                    }
-                }, false);*/
                 conn.manager.setValueAsString(valId, entryString);
                 break;
             case "BUTTON":
-                final String entryButton = event.getCurrent().getString();
+                boolean entryButton = event.getCurrent().getBool();
                 valId = new ValueId(homeId,
                         kid.getAttribute("nodeId").getNumber().shortValue(),
                         returnGenre(kid),
                         kid.getAttribute("cc").getNumber().shortValue(),
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
-                        org.zwave4j.ValueType.BOOL);
-                switch (entryButton) {
-                    case "True":
-                        /*conn.zwr.get(new Handler<Manager>() {
-                            @Override
-                            public void handle(Manager event) {
-                                event.get().pressButton(valId);
-                            }
-                        }, false);*/
-                        conn.manager.pressButton(valId);
-                        break;
-                    case "False":
-                        /*conn.zwr.get(new Handler<Manager>() {
-                            @Override
-                            public void handle(Manager event) {
-                                event.get().releaseButton(valId);
-                            }
-                        }, false);*/
-                        conn.manager.releaseButton(valId);
-                    break;
+                        org.zwave4j.ValueType.BUTTON);
+                if (entryButton) {
+                    conn.manager.pressButton(valId);
+                } else {
+                    conn.manager.releaseButton(valId);
                 }
             case "RAW":
                 JsonArray entryJson = event.getCurrent().getArray();
@@ -616,20 +510,16 @@ public class ZWaveDevice {
                         kid.getAttribute("instance").getNumber().shortValue(),
                         kid.getAttribute("index").getNumber().shortValue(),
                         org.zwave4j.ValueType.RAW);
-                /*conn.zwr.get(new Handler<Manager>() {
-                    @Override
-                    public void handle(Manager event) {
-                        event.get().setValueAsRaw(valId1, shorts);
-                    }
-                }, false);*/
                 conn.manager.setValueAsRaw(valId, shorts);
                 break;
             default:
-                // ToDo
+                LOGGER.info("sendValue - unknown org.zwave4j.ValueType");
         }
+        LOGGER.info("Value sent - " + kid.getAttribute("nodeId"));
     }
 
     protected ValueGenre returnGenre (Node child) {
+        LOGGER.info("Returned genre - " + child.getAttribute("nodeId"));
         switch (child.getAttribute("genre").toString()) {
             case "BASIC":
                 return ValueGenre.BASIC;
@@ -642,10 +532,10 @@ public class ZWaveDevice {
             case "USER":
                 return ValueGenre.USER;
             default:
+                LOGGER.info("returnGenre - unknown ValueGenre");
                 return null;
         }
     }
 
     private ZWaveDevice getMe() { return this; }
-
 }
