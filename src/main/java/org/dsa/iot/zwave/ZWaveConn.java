@@ -44,10 +44,6 @@ public class ZWaveConn {
 	}
 
 	protected void stop() {
-        refresh = true;
-        synchronized (manager) {
-            manager.removeDriver(controllerPort); //sometimes hangs up on this line, not sure why yet
-        }
 	}
 
     //create and build the manager object
@@ -60,7 +56,17 @@ public class ZWaveConn {
     }
 
     protected void restart() {
-        manager.addDriver(controllerPort);
+        refresh = true;
+        synchronized (manager) {
+            manager.removeDriver(controllerPort); //sometimes hangs up on this line, not sure why yet
+            manager.addDriver(controllerPort);try {
+                Thread.sleep(2000); //needed to prevent the application from crashing
+            } catch (Exception e) {
+                LOGGER.info("Sleep error: " + e);
+            }
+            // without the sleep above, this next line causes a crash
+            manager.requestNodeState(homeId, controllerNode);
+        }
     }
 
     //create the watcher that receives device notifications

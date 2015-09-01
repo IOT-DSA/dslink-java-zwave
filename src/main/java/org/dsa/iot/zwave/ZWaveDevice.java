@@ -104,15 +104,7 @@ public class ZWaveDevice {
 
     private class ControllerRefreshHandler implements Handler<ActionResult> {
         public void handle(ActionResult event) {
-            conn.stop();
             conn.restart();
-            try {
-                Thread.sleep(2000); //needed to prevent the application from crashing
-            } catch (Exception e) {
-                LOGGER.info("Sleep error: " + e);
-            }
-            // without the sleep above, this next line causes a crash
-            conn.manager.requestNodeState(homeId, conn.controllerNode);
         }
     }
 
