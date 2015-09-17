@@ -5,8 +5,6 @@ import org.dsa.iot.dslink.DSLinkFactory;
 import org.dsa.iot.dslink.DSLinkHandler;
 import org.dsa.iot.dslink.node.Node;
 import org.dsa.iot.dslink.node.NodeManager;
-import org.dsa.iot.dslink.serializer.Deserializer;
-import org.dsa.iot.dslink.serializer.Serializer;
 import org.dsa.iot.zwave.log.Log4jBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,11 +1,14 @@
 package org.dsa.iot.zwave;
 
 import org.dsa.iot.dslink.node.Node;
+import org.dsa.iot.dslink.node.NodeBuilder;
 import org.dsa.iot.dslink.node.Permission;
+import org.dsa.iot.dslink.node.Writable;
 import org.dsa.iot.dslink.node.actions.Action;
 import org.dsa.iot.dslink.node.actions.ActionResult;
 import org.dsa.iot.dslink.node.actions.Parameter;
 import org.dsa.iot.dslink.node.value.*;
+import org.dsa.iot.dslink.node.value.ValueType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vertx.java.core.Handler;
@@ -13,7 +16,7 @@ import org.zwave4j.*;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Set;
 
 /**
  * Created by Peter Weise on 8/12/15.
@@ -27,46 +30,85 @@ public class ZWaveConn {
 		LOGGER = LoggerFactory.getLogger(ZWaveConn.class);
 	}
 
-	protected Map<String, ZWaveDevice> devices = new HashMap<>(); //stores the device information
-	private ZWaveLink link;
-	protected Node node;
+	private final Map<String, ZWaveDevice> devices = new HashMap<>(); //stores the device information
+	private Node node;
+    private ZWaveLink link;
 	private long homeId;
-	private boolean ready = false;
-    protected boolean refresh = false;
-    protected Manager manager;
-	protected NotificationWatcher watcher;
-	protected String controllerPort;
-    protected Short controllerNode;
+    private final Manager manager = Manager.create();
+	private NotificationWatcher watcher;
+    private static boolean watcherAdded = false;
+	private String controllerPort;
+    private Short controllerNode;
 
 	public ZWaveConn (ZWaveLink link, Node node) {
-		this.link = link;
 		this.node = node;
+        this.link = link;
 	}
 
-	protected void stop() {
-	}
+    public long getHomeId() {
+        return homeId;
+    }
+
+    public Manager getManager() {
+        return manager;
+    }
+
+    public Map<String, ZWaveDevice> getDevices() {
+        return devices;
+    }
 
     //create and build the manager object
     public void start() {
-        manager = Manager.create();
+        {
+            NodeBuilder b = node.createChild("Status");
+            b.setValueType(ValueType.STRING);
+            b.setValue(new Value("Loading..."));
+            b.setWritable(Writable.NEVER);
+            b.build();
+        }
+
         controllerPort = node.getAttribute("comm port id").getString();
         manager.addDriver(controllerPort);
         init();
-        manager.addWatcher(watcher, null);
+        //the if statement is needed so that a second watcher isn't attached to the manager on restarts
+        if (!watcherAdded) {
+            manager.addWatcher(watcher, null);
+            watcherAdded = true;
+        }
+        LOGGER.info("Manager created");
     }
 
+    //restarts the controller
+    //if any nodes were added while the application is running (which requires the stick to be removed
+    //from the USB port as per ZWave standard), this restarts the connection with the USB stick.
+    //This is the only way I have found to add the new node to the tree without restarting the application
     protected void restart() {
-        refresh = true;
+        removeActions();
+        NodeBuilder b = node.createChild("Status");
+        b.setValueType(ValueType.STRING);
+        b.setValue(new Value("Loading"));
+        b.setWritable(Writable.NEVER);
+        b.build();
+        //do NOT use manager.removeWatcher(watcher) or Manager.destroy()
+        //these two functions cause a JVM crash due to native method call errors
         synchronized (manager) {
-            manager.removeDriver(controllerPort); //sometimes hangs up on this line, not sure why yet
-            manager.addDriver(controllerPort);try {
+            try {
+                manager.removeDriver(controllerPort);
+                manager.addDriver(controllerPort);
                 Thread.sleep(2000); //needed to prevent the application from crashing
+                // without the sleep above, this next line causes a crash
+                manager.requestNodeState(homeId, controllerNode);
+            } catch (InterruptedException e) {
+                LOGGER.error("Sleep error - {}" + e);
             } catch (Exception e) {
-                LOGGER.info("Sleep error: " + e);
+                LOGGER.error("Manager handling error - {}", e);
             }
-            // without the sleep above, this next line causes a crash
-            manager.requestNodeState(homeId, controllerNode);
         }
+    }
+
+    private void stop() {
+        //do NOT use Manager.destroy() - see restart() for further info
+        manager.removeDriver(controllerPort);
     }
 
     //create the watcher that receives device notifications
@@ -74,158 +116,142 @@ public class ZWaveConn {
         watcher = new NotificationWatcher() {
             @Override
             public void onNotification(Notification notification, Object context) {
-                    switch (notification.getType()) {
-                        case DRIVER_READY:
-                            driverReady(notification);
-                            break;
-                        case DRIVER_FAILED:
-                            driverFailed();
-                            break;
-                        case DRIVER_RESET:
-                            driverReset();
-                            break;
-                        case DRIVER_REMOVED:
-                            driverRemoved();
-                            break;
-                        case AWAKE_NODES_QUERIED:
-                            awakeNodesQueried();
-                            break;
-                        case ALL_NODES_QUERIED:
-                            allNodesQueried();
-                            break;
-                        case ALL_NODES_QUERIED_SOME_DEAD:
-                            allNodesQueriedSomeDead();
-                            break;
-                        case POLLING_ENABLED:
-                            pollingEnabled(notification);
-                            break;
-                        case POLLING_DISABLED:
-                            pollingDisabled(notification);
-                            break;
-                        case NODE_NEW:
-                            nodeNew(notification);
-                            break;
-                        case NODE_ADDED:
-                            nodeAdded(notification);
-                            break;
-                        case NODE_REMOVED:
-                            nodeRemoved(notification);
-                            break;
-                        case ESSENTIAL_NODE_QUERIES_COMPLETE:
-                            essentialNodeQueriesComplete(notification);
-                            break;
-                        case NODE_QUERIES_COMPLETE:
-                            nodeQueriesComplete(notification);
-                            break;
-                        case NODE_EVENT:
-                            nodeEvent(notification);
-                            break;
-                        case NODE_NAMING:
-                            nodeNaming(notification);
-                            break;
-                        case NODE_PROTOCOL_INFO:
-                            nodeProtocolInfo(notification);
-                            break;
-                        case VALUE_ADDED:
-                            valueAdded(notification);
-                            break;
-                        case VALUE_REMOVED:
-                            valueRemoved(notification);
-                            break;
-                        case VALUE_CHANGED:
-                            valueChanged(notification);
-                            break;
-                        case VALUE_REFRESHED:
-                            valueRefreshed(notification);
-                            break;
-                        case GROUP:
-                            group(notification);
-                            break;
-                        case SCENE_EVENT:
-                            sceneEvent(notification);
-                            break;
-                        case CREATE_BUTTON:
-                            createButton(notification);
-                            break;
-                        case DELETE_BUTTON:
-                            deleteButton(notification);
-                            break;
-                        case BUTTON_ON:
-                            buttonOn(notification);
-                            break;
-                        case BUTTON_OFF:
-                            buttonOff(notification);
-                            break;
-                        case NOTIFICATION:
-                            note(notification);
-                            break;
-                        case CONTROLLER_COMMAND:
-                            controllerCommand(notification);
-                            break;
-                        case NOT_SUPPORTED:
-                            LOGGER.info("NON_SUPPORTED notification type");
-                            break;
-                        default:
-                            LOGGER.info("NotificationWatcher default - unknown notification type: " + notification.getType().name());
-                            break;
-                    }
+            switch (notification.getType()) {
+                case DRIVER_READY:
+                    driverReady(notification);
+                    break;
+                case DRIVER_FAILED:
+                    driverFailed();
+                    break;
+                case DRIVER_RESET:
+                    driverReset();
+                    break;
+                case DRIVER_REMOVED:
+                    driverRemoved();
+                    break;
+                case AWAKE_NODES_QUERIED:
+                    awakeNodesQueried();
+                    break;
+                case ALL_NODES_QUERIED:
+                    allNodesQueried();
+                    break;
+                case ALL_NODES_QUERIED_SOME_DEAD:
+                    allNodesQueriedSomeDead();
+                    break;
+                case POLLING_ENABLED:
+                    pollingEnabled(notification);
+                    break;
+                case POLLING_DISABLED:
+                    pollingDisabled(notification);
+                    break;
+                case NODE_NEW:
+                    nodeNew(notification);
+                    break;
+                case NODE_ADDED:
+                    nodeAdded(notification);
+                    break;
+                case NODE_REMOVED:
+                    nodeRemoved(notification);
+                    break;
+                case ESSENTIAL_NODE_QUERIES_COMPLETE:
+                    essentialNodeQueriesComplete(notification);
+                    break;
+                case NODE_QUERIES_COMPLETE:
+                    nodeQueriesComplete(notification);
+                    break;
+                case NODE_EVENT:
+                    nodeEvent(notification);
+                    break;
+                case NODE_NAMING:
+                    nodeNaming(notification);
+                    break;
+                case NODE_PROTOCOL_INFO:
+                    nodeProtocolInfo(notification);
+                    break;
+                case VALUE_ADDED:
+                    valueAdded(notification);
+                    break;
+                case VALUE_REMOVED:
+                    valueRemoved(notification);
+                    break;
+                case VALUE_CHANGED:
+                    valueChanged(notification);
+                    break;
+                case VALUE_REFRESHED:
+                    valueRefreshed(notification);
+                    break;
+                case GROUP:
+                    group(notification);
+                    break;
+                case SCENE_EVENT:
+                    sceneEvent(notification);
+                    break;
+                case CREATE_BUTTON:
+                    createButton(notification);
+                    break;
+                case DELETE_BUTTON:
+                    deleteButton(notification);
+                    break;
+                case BUTTON_ON:
+                    buttonOn(notification);
+                    break;
+                case BUTTON_OFF:
+                    buttonOff(notification);
+                    break;
+                case NOTIFICATION:
+                    note(notification);
+                    break;
+                case CONTROLLER_COMMAND:
+                    controllerCommand(notification);
+                    break;
+                case NOT_SUPPORTED:
+                    LOGGER.error("NON_SUPPORTED notification type");
+                    break;
+                default:
+                    LOGGER.error("NotificationWatcher default - unknown notification type: "
+                            + notification.getType().name());
+                    break;
+            }
             }
         };
     }
 
     //build the new node based on previous session information
-	private void nodeAdded(final Notification notification) {
-            Short nodeId = new Short(notification.getNodeId());
-            ZWaveDevice zwp = null;
-            Node child = null;
-            if (!devices.containsKey(nodeId.toString())) {
-                String nid = nodeId.toString();
-                Map<String, Node> kids = node.getChildren();
-                if (kids == null || (kids.size() == 1 && refresh)) {
-                    child = node.createChild(nid).build();
-                    String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
-                    child.setDisplayName(name + "-" + nid);
-                    Value val = new Value(nid);
-                    child.setAttribute("nodeId", val);
-                    child.setAttribute("pathName", val);
-                    zwp = new ZWaveDevice(node, child, homeId, link, getMe());
-                    devices.put(nid, zwp);
-                } else {
-                    boolean inserted = false;
-                    for (Node kid : kids.values()) {
-                        if (!kid.getName().equals("rename") && kid.getAttribute("nodeId").toString().equals(nid)) {
-                            child = kid;
-                            zwp = new ZWaveDevice(node, child, homeId, link, getMe());
-                            devices.put(child.getAttribute("nodeId").getString(), zwp);
-                            inserted = true;
-                        }
-                    }
+	private void nodeAdded(Notification notification) {
+        Short nodeId = notification.getNodeId();
+        if (devices.containsKey(nodeId.toString())) { //device is already recognized and running
+            return;
+        }
+        String nid = nodeId.toString();
+        Node c = node.getChild("Status");
+        c.setValueType(ValueType.STRING);
+        c.setValue(new Value("Adding node " + nid));
+        c.setWritable(Writable.NEVER);
+        NodeBuilder b = node.createChild(nid);
+        String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
+        b.setDisplayName(name + "-" + nid);
+        Value val = new Value(nid);
+        b.setAttribute("nodeId", val);
+        b.setAttribute("pathName", val);
+        if (controllerNode.equals(nodeId)) { b.setHidden(true); }
+        Node child = b.build();
+        ZWaveDevice zwd = new ZWaveDevice(node, child, this);
+        devices.put(nid, zwd);
 
-                    if (!inserted) {
-                        child = node.createChild(nid).build();
-                        String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
-                        child.setDisplayName(name + "-" + nid);
-                        Value val = new Value(nid);
-                        child.setAttribute("nodeId", val);
-                        child.setAttribute("pathName", val);
-                        zwp = new ZWaveDevice(node, child, homeId, link, getMe());
-                        devices.put(nid, zwp);
-                    }
-                }
 
-                if (controllerNode.equals(nodeId)) {
-                    zwp.addAllOnOff();
-                }
+        Action childAct = zwd.setNameAction();
+        child.createChild("Rename").setAction(childAct).build().setSerializable(false);
 
-                Action childAct = zwp.setNameAction();
-                child.createChild("rename").setAction(childAct).build().setSerializable(false);
-            }
-            LOGGER.info("Node added - " + nodeId);
+        LOGGER.info("Node added - " + nodeId);
 	}
 
     //add the new data point to the node
 	private void valueAdded(Notification notification) {
         Short nodeId = notification.getNodeId();
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Adding value to node " + nodeId.toString()));
+        child.setWritable(Writable.NEVER);
         ZWaveDevice zwp = devices.get(nodeId.toString());
         zwp.addValue(notification);
 	}
@@ -240,6 +266,10 @@ public class ZWaveConn {
     //remove the data point
 	private void valueRemoved(Notification notification) {
 		Short nodeId = notification.getNodeId();
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Removing value from node " + nodeId.toString()));
+        child.setWritable(Writable.NEVER);
 		ZWaveDevice zwp = devices.get(nodeId.toString());
 		zwp.removeValue(notification);
 	}
@@ -252,12 +282,20 @@ public class ZWaveConn {
 
     //all the initialization queries on a node have been completed
 	private void nodeQueriesComplete(Notification notification) {
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Finalizing Node Queries..."));
+        child.setWritable(Writable.NEVER);
         LOGGER.info("Node Queries Complete - " + notification.getNodeId());
 	}
 
     //driver for a PC Z-Wave controller has been added and is ready to use
 	private void driverReady (Notification notification) {
         LOGGER.info("Driver Ready");
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Driver Ready"));
+        child.setWritable(Writable.NEVER);
 		homeId = notification.getHomeId();
         controllerNode = manager.getControllerNodeId(homeId);
 	}
@@ -272,6 +310,7 @@ public class ZWaveConn {
 		LOGGER.info("Driver reset");
 	}
 
+    //driver has been removed from the manager
     private void driverRemoved() {
         LOGGER.info("Driver removed");
     }
@@ -279,41 +318,44 @@ public class ZWaveConn {
     //all awake nodes have been queried, so client application can expect complete data for these nodes
 	private void awakeNodesQueried() {
 		LOGGER.info("Awake nodes queried");
-		ready = true;
-        refresh = false;
 
         removeExtraNodes(); //clean out unused nodes
 
-        //turn on the rename option for the node
-        Action act = setNameAction();
-        node.createChild("rename").setAction(act).build().setSerializable(false);
+        addActions();
+
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Ready"));
+        child.setWritable(Writable.NEVER);
     }
 
     //all nodes have been queried, so client application can expected complete data
 	private void allNodesQueried() {
 		LOGGER.info("All nodes queried");
         manager.writeConfig(homeId);
-		ready = true;
-        refresh = false;
 
         removeExtraNodes(); //clean out unused nodes
 
-        //turn on the rename option for the node
-        Action act = setNameAction();
-        node.createChild("rename").setAction(act).build().setSerializable(false);
+        addActions();
+
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Ready"));
+        child.setWritable(Writable.NEVER);
     }
 
     //all nodes have been queried but some dead nodes found
     private void allNodesQueriedSomeDead() {
 		manager.writeConfig(homeId);
-		ready = true;
-        refresh = false;
 
         removeExtraNodes(); //clean out unused nodes
 
-        //turn on the rename option for the node
-        Action act = setNameAction();
-        node.createChild("rename").setAction(act).build().setSerializable(false);
+        addActions();
+
+        Node child = node.getChild("Status");
+        child.setValueType(ValueType.STRING);
+        child.setValue(new Value("Ready"));
+        child.setWritable(Writable.NEVER);
     }
 
     //basic node information has been received
@@ -321,10 +363,10 @@ public class ZWaveConn {
         LOGGER.info("Node Protocol Info - " + notification.getNodeId());
 	}
 
-    //the queries on a node that are essential to its operation have been completed. The node can now handle incoming messages
+    //the queries on a node that are essential to its operation have been completed.
+    //The node can now handle incoming messages
 	private void essentialNodeQueriesComplete(Notification notification) {
         LOGGER.info("Essential Node Queries Complete - " + notification.getNodeId());
-		ready = true;
 	}
 
     //one of the node names has changed (name, manufacturer, product)
@@ -339,14 +381,13 @@ public class ZWaveConn {
     //new node has been found
 	private void nodeNew(Notification notification) {
         LOGGER.info("Node New - " + notification.getNodeId());
-        String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
+        // String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
 	}
 
     //node has been removed from OpenZWave's list
 	private void nodeRemoved(Notification notification) {
         Short nodeId = notification.getNodeId();
         String nid = nodeId.toString();
-        //node.removeChild(nid);
         devices.remove(nid);
         LOGGER.info("Node Removed - " + notification.getNodeId());
 	}
@@ -405,122 +446,123 @@ public class ZWaveConn {
         LOGGER.info("Controller Command - " + notification.getNodeId());
     }
 
-    //set up for the node rename action
-	private Action setNameAction() {
-		Action act = new Action(Permission.READ, new SetNameHandler(node));
-		act.addParameter(new Parameter("name", org.dsa.iot.dslink.node.value.ValueType.STRING, new Value(node.getDisplayName())));
-		return act;
-	}
+    //action method to set the handler that refreshs the controller nodes
+    //call this method after removing the controller, adding or removing a device, and re-inserting
+    //the controller during runtime
+    private Action controllerRefreshAction() {
+        return new Action(Permission.READ, new ControllerRefreshHandler());
+    }
 
-    //node rename action handler
-	private class SetNameHandler implements Handler<ActionResult> {
-		Node child;
+    //handler that refreshed the controller
+    private class ControllerRefreshHandler implements Handler<ActionResult> {
+        @Override
+        public void handle(ActionResult event) {
+            restart();
+        }
+    }
 
-		public SetNameHandler(Node child) {
-			this.child = child;
-		}
+    //action method to set the controller All-On handler
+    private Action setAllOnAction() {
+        return new Action(Permission.READ, new SetOnHandler());
+    }
 
+    //handler that turns all the devices connected to the controller on
+    private class SetOnHandler implements Handler<ActionResult> {
+        @Override
+        public void handle(ActionResult event) {
+            manager.switchAllOn(homeId);
+        }
+    }
+
+    //action method to set the controller All-Off handler
+    private Action setAllOffAction() {
+        return new Action(Permission.READ, new SetOffHandler());
+    }
+
+    //handler that turns all the devices connected to the controller off
+    private class SetOffHandler implements Handler<ActionResult> {
+        @Override
+        public void handle(ActionResult event) {
+            manager.switchAllOff(homeId);
+        }
+    }
+
+    //add all the actions for the controller node
+    private void addActions() {
+        Action delAct = deleteAction();
+        node.createChild("Delete").setAction(delAct).setSerializable(false).build();
+
+        Action editAct = editAction();
+        node.createChild("Edit").setAction(editAct).setSerializable(false).build();
+
+        Action actOn = setAllOnAction();
+        node.createChild("All On").setAction(actOn).setSerializable(false).build();
+
+        Action actOff = setAllOffAction();
+        node.createChild("All Off").setAction(actOff).setSerializable(false).build();
+
+        Action actRefresh = controllerRefreshAction();
+        node.createChild("Refresh").setAction(actRefresh).setSerializable(false).build();
+    }
+
+    //remove the actions fro the controller during a refresh
+    private void removeActions() {
+        node.removeChild("Delete");
+        node.removeChild("Edit");
+        node.removeChild("All On");
+        node.removeChild("All Off");
+        node.removeChild("Refresh");
+    }
+
+    //action method that sets the handler for editing the controller node
+    private Action editAction() {
+        Action act = new Action(Permission.READ, new EditHandler());
+        act.addParameter(new Parameter("Name", ValueType.STRING, new Value(node.getName())));
+        Set<String> ports = link.findPorts();
+        act.addParameter(new Parameter("Comm Port ID", ValueType.makeEnum(ports),
+                new Value(node.getAttribute("comm port id").getString())));
+        return act;
+    }
+
+    //handler for editing the controller node
+	private class EditHandler implements Handler<ActionResult> {
+        @Override
 		public void handle(ActionResult event) {
-			if (ready) {
-				final String name = event.getParameter("name", org.dsa.iot.dslink.node.value.ValueType.STRING).getString();
-				child.setDisplayName(name);
-				final short val3 = child.getAttribute("nodeId").getNumber().shortValue();
-				manager.setNodeProductName(homeId, val3, name);
-			}
+            if (!(event.getParameter("Name").toString()).equals(node.getDisplayName())) {
+                final String name = event.getParameter("Name", ValueType.STRING).getString();
+                node.setDisplayName(name);
+            }
+            String cp = event.getParameter("Comm Port ID", ValueType.STRING).getString();
+            if (!controllerPort.equals(cp)) {
+                controllerPort = cp;
+                node.setAttribute("comm port id", new Value(controllerPort));
+                stop();
+                restart();
+            }
 		}
 	}
 
-    //remove unused nodes
+    //action method to set the handler for deleting the controller node
+    private Action deleteAction() {
+        return new Action(Permission.READ, new DeleteHandler());
+    }
+
+    //handler for deleting the controller node
+    private class DeleteHandler implements Handler<ActionResult> {
+        public void handle(ActionResult event) {
+            stop();
+            link.stop(node);
+        }
+    }
+
+    //remove unused nodes that were disconnected during runtime
     private void removeExtraNodes() {
-        Map<String, Node> kids = node.getChildren();
-        for (Node kid: kids.values()) {
-            if (devices.get(kid.getName()) == null) {
-                node.removeChild(kid);
+        for (ZWaveDevice zwd : devices.values()) {
+            String name = zwd.getName();
+            if (!node.hasChild(name)) {
+                devices.remove(name);
             }
         }
     }
 
-	private ZWaveConn getMe() { return this; }
-
-	/***** this block may be helpful for debugging *****/
-	protected Object getValue(ValueId valueId) {
-		switch (valueId.getType()) {
-			case BOOL:
-				AtomicReference<Boolean> b = new AtomicReference<>();
-				Manager.get().getValueAsBool(valueId, b);
-				return b.get();
-			case BYTE:
-				AtomicReference<Short> bb = new AtomicReference<>();
-				Manager.get().getValueAsByte(valueId, bb);
-				return bb.get();
-			case DECIMAL:
-				AtomicReference<Float> f = new AtomicReference<>();
-				Manager.get().getValueAsFloat(valueId, f);
-				return f.get();
-			case INT:
-				AtomicReference<Integer> i = new AtomicReference<>();
-				Manager.get().getValueAsInt(valueId, i);
-				return i.get();
-			case LIST:
-				return null;
-			case SCHEDULE:
-				return null;
-			case SHORT:
-				AtomicReference<Short> s = new AtomicReference<>();
-				Manager.get().getValueAsShort(valueId, s);
-				return s.get();
-			case STRING:
-				AtomicReference<String> ss = new AtomicReference<>();
-				Manager.get().getValueAsString(valueId, ss);
-				return ss.get();
-			case BUTTON:
-				return null;
-			case RAW:
-				AtomicReference<short[]> sss = new AtomicReference<>();
-				Manager.get().getValueAsRaw(valueId, sss);
-				return sss.get();
-			default:
-				return null;
-		}
-	}
-	/***** *****/
-
-	/***** this block may be helpful for debugging *****/
-	/*private void readInput() {
-		final BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-		String line = null;
-		do {
-			try {
-				line = br.readLine();
-			} catch (IOException e) {
-				LOGGER.info("br.readLine(): " + e);
-			}
-			if (!ready || line == null) {
-				continue;
-			}
-
-			short i = 4;
-			switch (line) {
-				case "on":
-					//manager.switchAllOn(homeId);
-					LOGGER.info(manager.getNodeType(homeId, i));
-					LOGGER.info(manager.isNodeAwake(homeId, i));
-					manager.setNodeOn(homeId, i);
-
-					break;
-				case "off":
-					//manager.switchAllOff(homeId);
-					manager.setNodeOff(homeId, i);
-					break;
-			}
-		} while(line != null && !line.equals("q"));
-
-
-		try {
-			br.close();
-		} catch (IOException e) {
-			LOGGER.info("br.close():" + e);
-		}
-	}*/
-	/***** *****/
 }
