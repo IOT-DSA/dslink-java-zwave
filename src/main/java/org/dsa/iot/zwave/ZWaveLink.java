@@ -1,30 +1,33 @@
 package org.dsa.iot.zwave;
 
+import jssc.SerialNativeInterface;
+import jssc.SerialPortList;
 import org.dsa.iot.dslink.node.Node;
 import org.dsa.iot.dslink.node.NodeBuilder;
 import org.dsa.iot.dslink.node.Permission;
 import org.dsa.iot.dslink.node.actions.Action;
 import org.dsa.iot.dslink.node.actions.ActionResult;
 import org.dsa.iot.dslink.node.actions.Parameter;
-import org.dsa.iot.dslink.node.value.*;
+import org.dsa.iot.dslink.node.value.Value;
 import org.dsa.iot.dslink.node.value.ValueType;
+import org.dsa.iot.dslink.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vertx.java.core.Handler;
-import org.zwave4j.*;
-import jssc.SerialNativeInterface;
-import jssc.SerialPortList;
+import org.zwave4j.NativeLibraryLoader;
+import org.zwave4j.Options;
+import org.zwave4j.ZWave4j;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.URL;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
+import java.util.*;
 import java.util.regex.Pattern;
-
-/**
- * Created by Peter Weise on 8/12/15.
- */
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class ZWaveLink {
 
@@ -50,23 +53,44 @@ public class ZWaveLink {
 
     //load native library, build action for loading path and comm port
 	private void init() {
-        node.clearChildren(); //used for testing purposes
-
         NativeLibraryLoader.loadLibrary(ZWave4j.LIBRARY_NAME, ZWave4j.class);
+        options();
         LOGGER.info("Native library loaded");
         restoreLastSession();
 
-        Action act = connAction();
-        node.createChild("Add Connection").setAction(act).build().setSerializable(false);
+        {
+            final Action act = connAction();
+            NodeBuilder b = node.createChild("addConnection");
+            b.setDisplayName("Add Connection");
+            b.setSerializable(false);
+            b.setAction(act);
+            b.getListener().setOnListHandler(new Handler<Node>() {
+                @Override
+                public void handle(Node event) {
+                    Objects.getDaemonThreadPool().execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            Set<String> ports = findPorts();
+                            List<Parameter> params = new LinkedList<>();
+                            params.add(new Parameter("Name", ValueType.STRING, new Value("USB Port")));
+                            params.add(new Parameter("Comm Port ID", ValueType.makeEnum(ports)));
+                            act.setParams(params);
+                        }
+                    });
+                }
+            });
+            b.build();
+        }
 	}
 
     //reload the nodes and objects used during the last application execution
     private void restoreLastSession() {
         Map<String, Node> children = node.getChildren();
-        if (children == null /*|| children.size() == 1*/) return;
+        if (children == null) {
+            return;
+        }
         for (Node child: children.values()) {
             if (child.getAttribute("comm port id") != null) {
-                options();
                 ZWaveConn conn = new ZWaveConn(this, child);
                 conn.start();
             } else if (child.getAction() == null) {
@@ -77,18 +101,73 @@ public class ZWaveLink {
 
     //create action tree for setting the comm port
     private Action connAction() {
-        Action act = new Action(Permission.READ, new AddConnHandler());
-        act.addParameter(new Parameter("Name", ValueType.STRING, new Value("USB Port")));//).setPlaceHolder("USB Port"));
+        Action act = new Action(Permission.WRITE, new AddConnHandler());
+        act.addParameter(new Parameter("Name", ValueType.STRING, new Value("USB Port")));
         Set<String> ports = findPorts();
-        act.addParameter(new Parameter("Comm Port ID", ValueType.makeEnum(ports), new Value("/dev/cu.SLAB_USBtoUART")));
+        act.addParameter(new Parameter("Comm Port ID", ValueType.makeEnum(ports)));
         return act;
     }
 
     //set and lock the Options object
     private void options() {
-        URL url = this.getClass().getResource("/config");
-        final String path = url.toString().replaceFirst("file:", "");
-        final Options options = Options.create(path, "", "");
+        if (locked) {
+            return;
+        }
+
+        final String configPath;
+        final File jar;
+        {
+            ProtectionDomain domain = getClass().getProtectionDomain();
+            CodeSource source = domain.getCodeSource();
+            URL location = source.getLocation();
+            jar = new File(location.getPath());
+        }
+        if (!jar.isDirectory()) {
+            final File basePath = new File("zwave-config");
+            if (basePath.exists()) {
+                configPath = basePath.getAbsolutePath();
+            } else {
+                if (!basePath.mkdir()) {
+                    throw new RuntimeException("Failed to create config dir");
+                }
+
+                try {
+                    ZipFile zf = new ZipFile(jar);
+                    Enumeration<? extends ZipEntry> entries = zf.entries();
+                    while (entries.hasMoreElements()) {
+                        ZipEntry entry = entries.nextElement();
+                        String name = entry.getName();
+                        if (name.startsWith("config/")) {
+                            name = name.substring(7);
+                            File f = new File(basePath, name);
+                            if (entry.isDirectory()) {
+                                continue;
+                            }
+                            f.getParentFile().mkdirs();
+
+                            FileOutputStream stream = new FileOutputStream(f);
+                            int read;
+                            byte[] buf = new byte[4096];
+                            InputStream is = zf.getInputStream(entry);
+                            while ((read = is.read(buf, 0, buf.length)) > -1) {
+                                stream.write(buf, 0, read);
+                            }
+                            is.close();
+                            stream.close();
+                        }
+                    }
+                    zf.close();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                configPath = basePath.getAbsolutePath();
+            }
+        } else {
+            URL url = getClass().getResource("/config");
+            configPath = url.toString().replaceFirst("file:", "");
+        }
+
+        final Options options = Options.create(configPath, "", "");
         options.addOptionBool("ConsoleOutput", false);
         options.lock();
         locked = true;

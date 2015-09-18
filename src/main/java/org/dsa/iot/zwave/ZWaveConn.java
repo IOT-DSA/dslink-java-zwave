@@ -18,10 +18,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Created by Peter Weise on 8/12/15.
- */
-
 public class ZWaveConn {
 
 	private static final Logger LOGGER;
@@ -40,7 +36,7 @@ public class ZWaveConn {
 	private String controllerPort;
     private Short controllerNode;
 
-	public ZWaveConn (ZWaveLink link, Node node) {
+	public ZWaveConn(ZWaveLink link, Node node) {
 		this.node = node;
         this.link = link;
 	}
@@ -87,7 +83,6 @@ public class ZWaveConn {
         NodeBuilder b = node.createChild("Status");
         b.setValueType(ValueType.STRING);
         b.setValue(new Value("Loading"));
-        b.setWritable(Writable.NEVER);
         b.build();
         //do NOT use manager.removeWatcher(watcher) or Manager.destroy()
         //these two functions cause a JVM crash due to native method call errors
@@ -226,14 +221,15 @@ public class ZWaveConn {
         Node c = node.getChild("Status");
         c.setValueType(ValueType.STRING);
         c.setValue(new Value("Adding node " + nid));
-        c.setWritable(Writable.NEVER);
         NodeBuilder b = node.createChild(nid);
         String name = manager.getNodeProductName(notification.getHomeId(), notification.getNodeId());
         b.setDisplayName(name + "-" + nid);
         Value val = new Value(nid);
         b.setAttribute("nodeId", val);
         b.setAttribute("pathName", val);
-        if (controllerNode.equals(nodeId)) { b.setHidden(true); }
+        if (controllerNode.equals(nodeId)) {
+            b.setHidden(true);
+        }
         Node child = b.build();
         ZWaveDevice zwd = new ZWaveDevice(node, child, this);
         devices.put(nid, zwd);
@@ -290,7 +286,7 @@ public class ZWaveConn {
 	}
 
     //driver for a PC Z-Wave controller has been added and is ready to use
-	private void driverReady (Notification notification) {
+	private void driverReady(Notification notification) {
         LOGGER.info("Driver Ready");
         Node child = node.getChild("Status");
         child.setValueType(ValueType.STRING);
@@ -320,7 +316,6 @@ public class ZWaveConn {
 		LOGGER.info("Awake nodes queried");
 
         removeExtraNodes(); //clean out unused nodes
-
         addActions();
 
         Node child = node.getChild("Status");
@@ -349,7 +344,6 @@ public class ZWaveConn {
 		manager.writeConfig(homeId);
 
         removeExtraNodes(); //clean out unused nodes
-
         addActions();
 
         Node child = node.getChild("Status");
@@ -446,13 +440,6 @@ public class ZWaveConn {
         LOGGER.info("Controller Command - " + notification.getNodeId());
     }
 
-    //action method to set the handler that refreshs the controller nodes
-    //call this method after removing the controller, adding or removing a device, and re-inserting
-    //the controller during runtime
-    private Action controllerRefreshAction() {
-        return new Action(Permission.READ, new ControllerRefreshHandler());
-    }
-
     //handler that refreshed the controller
     private class ControllerRefreshHandler implements Handler<ActionResult> {
         @Override
@@ -461,22 +448,12 @@ public class ZWaveConn {
         }
     }
 
-    //action method to set the controller All-On handler
-    private Action setAllOnAction() {
-        return new Action(Permission.READ, new SetOnHandler());
-    }
-
     //handler that turns all the devices connected to the controller on
     private class SetOnHandler implements Handler<ActionResult> {
         @Override
         public void handle(ActionResult event) {
             manager.switchAllOn(homeId);
         }
-    }
-
-    //action method to set the controller All-Off handler
-    private Action setAllOffAction() {
-        return new Action(Permission.READ, new SetOffHandler());
     }
 
     //handler that turns all the devices connected to the controller off
@@ -489,19 +466,26 @@ public class ZWaveConn {
 
     //add all the actions for the controller node
     private void addActions() {
-        Action delAct = deleteAction();
+        Action delAct = new Action(Permission.WRITE, new DeleteHandler());
         node.createChild("Delete").setAction(delAct).setSerializable(false).build();
 
-        Action editAct = editAction();
+        Action editAct;
+        {
+            editAct = new Action(Permission.WRITE, new EditHandler());
+            editAct.addParameter(new Parameter("Name", ValueType.STRING, new Value(node.getName())));
+            Set<String> ports = link.findPorts();
+            editAct.addParameter(new Parameter("Comm Port ID", ValueType.makeEnum(ports),
+                    new Value(node.getAttribute("comm port id").getString())));
+        }
         node.createChild("Edit").setAction(editAct).setSerializable(false).build();
 
-        Action actOn = setAllOnAction();
+        Action actOn = new Action(Permission.WRITE, new SetOnHandler());
         node.createChild("All On").setAction(actOn).setSerializable(false).build();
 
-        Action actOff = setAllOffAction();
+        Action actOff = new Action(Permission.WRITE, new SetOffHandler());;
         node.createChild("All Off").setAction(actOff).setSerializable(false).build();
 
-        Action actRefresh = controllerRefreshAction();
+        Action actRefresh = new Action(Permission.READ, new ControllerRefreshHandler());
         node.createChild("Refresh").setAction(actRefresh).setSerializable(false).build();
     }
 
@@ -512,16 +496,6 @@ public class ZWaveConn {
         node.removeChild("All On");
         node.removeChild("All Off");
         node.removeChild("Refresh");
-    }
-
-    //action method that sets the handler for editing the controller node
-    private Action editAction() {
-        Action act = new Action(Permission.READ, new EditHandler());
-        act.addParameter(new Parameter("Name", ValueType.STRING, new Value(node.getName())));
-        Set<String> ports = link.findPorts();
-        act.addParameter(new Parameter("Comm Port ID", ValueType.makeEnum(ports),
-                new Value(node.getAttribute("comm port id").getString())));
-        return act;
     }
 
     //handler for editing the controller node
@@ -541,11 +515,6 @@ public class ZWaveConn {
             }
 		}
 	}
-
-    //action method to set the handler for deleting the controller node
-    private Action deleteAction() {
-        return new Action(Permission.READ, new DeleteHandler());
-    }
 
     //handler for deleting the controller node
     private class DeleteHandler implements Handler<ActionResult> {

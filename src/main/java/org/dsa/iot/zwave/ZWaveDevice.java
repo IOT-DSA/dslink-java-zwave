@@ -23,10 +23,6 @@ import org.zwave4j.ValueId;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Created by Peter Weise on 8/12/15.
- */
-
 public class ZWaveDevice {
 
     private static final Logger LOGGER;
@@ -53,7 +49,7 @@ public class ZWaveDevice {
     }
 
     //add a new data point and value to the node
-    protected void addValue (Notification notification) {
+    protected void addValue(Notification notification) {
         short validClass = notification.getValueId().getCommandClassId();
         // ignore COMMAND_CLASS_BASIC (0x20) as it currently not used for USER access
         // ignored because the value is removed by ZWave before the node stored as a child
@@ -234,6 +230,11 @@ public class ZWaveDevice {
             String name = StringUtils.encodeName(manager.getValueLabel(notification.getValueId())
                     .replace("(%)", "(Percent)"));
             Node child = node.getChild(name);
+            if (child == null) {
+                NodeBuilder b = node.createChild(name);
+                b.setValueType(ValueType.DYNAMIC);
+                child = b.build();
+            }
             setValue(notification.getValueId(), child);
         }
         //LOGGER.info("Value changed - " + notification.getNodeId());
