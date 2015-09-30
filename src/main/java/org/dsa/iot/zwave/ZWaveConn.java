@@ -1,5 +1,6 @@
 package org.dsa.iot.zwave;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.dsa.iot.dslink.node.Node;
 import org.dsa.iot.dslink.node.NodeBuilder;
 import org.dsa.iot.dslink.node.Permission;
@@ -11,7 +12,7 @@ import org.dsa.iot.dslink.node.value.*;
 import org.dsa.iot.dslink.node.value.ValueType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vertx.java.core.Handler;
+import org.dsa.iot.dslink.util.handler.Handler;
 import org.zwave4j.*;
 
 import java.util.HashMap;
@@ -54,6 +55,7 @@ public class ZWaveConn {
     }
 
     //create and build the manager object
+    @SuppressFBWarnings("ST")
     public void start() {
         {
             NodeBuilder b = node.createChild("Status");
@@ -78,6 +80,7 @@ public class ZWaveConn {
     //if any nodes were added while the application is running (which requires the stick to be removed
     //from the USB port as per ZWave standard), this restarts the connection with the USB stick.
     //This is the only way I have found to add the new node to the tree without restarting the application
+    @SuppressFBWarnings("SWL")
     protected void restart() {
         removeActions();
         NodeBuilder b = node.createChild("Status");

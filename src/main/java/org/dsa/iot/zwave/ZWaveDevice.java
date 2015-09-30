@@ -11,10 +11,10 @@ import org.dsa.iot.dslink.node.value.Value;
 import org.dsa.iot.dslink.node.value.ValuePair;
 import org.dsa.iot.dslink.node.value.ValueType;
 import org.dsa.iot.dslink.util.StringUtils;
+import org.dsa.iot.dslink.util.json.JsonArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vertx.java.core.Handler;
-import org.vertx.java.core.json.JsonArray;
+import org.dsa.iot.dslink.util.handler.Handler;
 import org.zwave4j.Manager;
 import org.zwave4j.Notification;
 import org.zwave4j.ValueGenre;
@@ -371,7 +371,7 @@ public class ZWaveDevice {
                 valJson = new JsonArray();
                 short[] shorts = sss.get();
                 for (int j : shorts) {
-                    valJson.addNumber(shorts[j]);
+                    valJson.add(shorts[j]);
                 }
                 child.setValueType(ValueType.ARRAY);
                 val = new Value(valJson);

@@ -1,6 +1,7 @@
 apply plugin: 'application'
 apply plugin: 'findbugs'
 apply plugin: 'java'
+apply plugin: 'idea'
 
 mainClassName = 'org.dsa.iot.zwave.Main'
 sourceCompatibility = 1.7
@@ -13,13 +14,27 @@ repositories {
         url 'https://oss.sonatype.org/content/repositories/snapshots/'
     }
 }
- 
+
+configurations {
+    provided
+}
+
+idea {
+    module {
+        scopes.PROVIDED.plus += [ configurations.provided ]
+    }
+}
+
 dependencies {
-    compile 'org.iot-dsa:commons:0.9.0-SNAPSHOT'
-    compile 'org.iot-dsa:dslink:0.8.0'
-    //compile 'com.github.zgmnkv:zwave4j:0.3'
+    provided 'com.google.code.findbugs:annotations:3.0.0'
+    compile 'org.iot-dsa:commons:0.10.0'
+    compile 'org.iot-dsa:dslink:0.10.0'
     compile fileTree('external')
     compile 'org.scream3r:jssc:2.8.0'
+}
+
+compileJava {
+    sourceSets.main.compileClasspath += configurations.provided
 }
 
 run {

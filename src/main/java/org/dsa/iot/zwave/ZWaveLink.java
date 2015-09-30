@@ -13,7 +13,7 @@ import org.dsa.iot.dslink.node.value.ValueType;
 import org.dsa.iot.dslink.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vertx.java.core.Handler;
+import org.dsa.iot.dslink.util.handler.Handler;
 import org.zwave4j.NativeLibraryLoader;
 import org.zwave4j.Options;
 import org.zwave4j.ZWave4j;
@@ -143,7 +143,12 @@ public class ZWaveLink {
                             if (entry.isDirectory()) {
                                 continue;
                             }
-                            f.getParentFile().mkdirs();
+
+                            File parent = f.getParentFile();
+                            if (!(parent.exists() || parent.mkdirs())) {
+                                String dir = parent.getAbsolutePath();
+                                LOGGER.error("Failed to create dir: {}", dir);
+                            }
 
                             FileOutputStream stream = new FileOutputStream(f);
                             int read;
