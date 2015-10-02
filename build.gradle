@@ -27,8 +27,8 @@ idea {
 
 dependencies {
     provided 'com.google.code.findbugs:annotations:3.0.0'
-    compile 'org.iot-dsa:commons:0.10.0'
-    compile 'org.iot-dsa:dslink:0.10.0'
+    compile 'org.iot-dsa:commons:0.10.1'
+    compile 'org.iot-dsa:dslink:0.10.1'
     compile fileTree('external')
     compile 'org.scream3r:jssc:2.8.0'
 }
